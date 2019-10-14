@@ -81,6 +81,72 @@ for (i in dfrange) {
 }
 aveAwayPoints <- data.frame(aveAwayPoints = aveAwayPoints)
 
-aveEPL <- cbind(epl,aveHomeGoals,aveAwayGoals,aveHomePoints,aveAwayPoints)
+aveTeams <- cbind(epl,aveHomeGoals,aveAwayGoals,aveHomePoints,aveAwayPoints)
 
+library(tidyverse)
+library(rvest)
+library(purrr)
+library(magrittr)
+urls <- read_table2(file = "Match List.txt",col_names  = FALSE) %>%
+  .[[1]]
 
+table_extract <- function(url){
+  tb <- read_html(x = as.character(url),encoding = 'UTF-8') 
+  tb_information <- tb %>%
+    html_nodes('h1') %>%
+    html_text() %>%
+    str_replace_all(c('vs.' = '-','Match Report' = '-')) %>%
+    str_replace_all(c('- –' = '-')) %>%
+    str_split(pattern = "-") %>%
+    unlist() %>%
+    str_trim()
+  
+  tb_team <- tb_information[1:2]
+  
+  tb_time <- tb_information[3]
+  
+  
+  tb_score <- tb %>%
+    html_nodes('.score') %>%
+    html_text() %>%
+    as.numeric()
+  
+  tb_table <- tb %>%
+    html_table(trim = TRUE) %>%
+    .[4:7] %>%
+    map( function(x){
+      x$Nation <- x$Nation %>%
+        str_extract_all('[A-Z]+') %>%
+        unlist()
+      return(x)
+    }
+    ) 
+ 
+  tb_table_rbind <- tb_table %>% {
+    rbind(full_join(x = .[[1]],y = .[[2]],by = c("Player","Nation","Min")) %>%
+            mutate(Team = tb_team[1]),
+          full_join(x = .[[3]],y = .[[4]],by = c("Player","Nation","Min")) %>%
+            mutate(Team = tb_team[2])
+    ) %>%
+      mutate(Time = tb_time)
+  }
+  
+  tb_title <- tb %>%
+    html_nodes('caption') %>%
+    html_text() 
+  return(list(tb_score,tb_information,tb_table_rbind))
+}
+
+t1 <- Sys.time()
+premiership <- lapply(X = 1:3, FUN = function(i){
+  message("The ",i,"th",": ","elapsed time: ",system.time(table_result <- table_extract(url = urls[i]))[3])
+  return(table_result)
+} )
+
+table_all <- premiership %>%
+  map(function(x) x[[3]]) %>%
+  bind_rows()
+
+players <- table_all
+
+# Missin Merging Part.
